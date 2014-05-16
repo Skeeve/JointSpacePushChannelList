@@ -292,6 +292,7 @@ push-channellist - a small utility for Philips TV Sets
 =head1 SYNOPSIS
 
 1) push-channellist
+
 2) push-channellist [options] filename
 
 =head1 DESCRIPTION
@@ -375,7 +376,7 @@ When you're satisfied, execute
 
     push-channellist my-list.txt
 
-and get yourself a coffe (or to or three).
+and get yourself a coffee (or two or three).
 
 =head1 IMPLEMENTATION NOTES
 

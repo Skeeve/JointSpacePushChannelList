@@ -7,6 +7,7 @@ NAME
 
 SYNOPSIS
        1) push-channellist
+
        2) push-channellist [options] filename
 
 DESCRIPTION
@@ -76,7 +77,7 @@ CONFIGURATION
 
            push-channellist my-list.txt
 
-       and get yourself a coffe (or to or three).
+       and get yourself a coffee (or two or three).
 
 IMPLEMENTATION NOTES
        This script is quite slow! As JointSpace directly replies with "OK"
