@@ -2,28 +2,29 @@ PUSH-CHANNELLIST(1)   User Contributed Perl Documentation  PUSH-CHANNELLIST(1)
 
 
 
-NNAAMMEE
+NAME
        push-channellist - a small utility for Philips TV Sets
 
-SSYYNNOOPPSSIISS
-       1) push-channellist 2) push-channellist [options] filename
+SYNOPSIS
+       1) push-channellist
+       2) push-channellist [options] filename
 
-DDEESSCCRRIIPPTTIIOONN
+DESCRIPTION
        push-channellist is a small utility to retrieve the channellist from a
        Philips TV set and to push an existing list to the TV.
 
        Please read the section CONFIGURATION below before running the script.
 
-OOPPTTIIOONNSS
-       --dd
-       ----ddrryyrruunn
+OPTIONS
+       -d
+       --dryrun
            Do nothing. Just show what would be done
 
-       --tt
-       ----tteesstt
+       -t
+       --test
            Test the channellist, given as filename.
 
-CCOONNFFIIGGUURRAATTIIOONN
+CONFIGURATION
        In order to contact the TV Set, which must support JointSpace (see
        <http://jointspace.sourceforge.net/>), the IP or name of the TV needs
        to be configured in the script. Search for the line
@@ -32,12 +33,12 @@ CCOONNFFIIGGUURRAATTIIOONN
 
        and replace "tv" with whatever is required for your TV.
 
-   RReettrriieevviinngg tthhee ccuurrrreenntt CChhaannnneelllliisstt
+   Retrieving the current Channellist
        Run push-channellist without any parameters to retrieve the current
        channellist. The list can be used as a basis for your own list to push
        to the TV.
 
-   FFoorrmmaatt ooff tthhee cchhaannnneelllliisstt
+   Format of the channellist
        The format of the channellist is quite simple and flexible.
 
        Each line has to be of the format:
@@ -64,7 +65,7 @@ CCOONNFFIIGGUURRAATTIIOONN
        Will assign 1, 2 and 3 to the first 3 channels and 5 and 6 to the next
        2 channels.
 
-   CCrreeaattiinngg yyoouurr ffaavvoouurriittee cchhaannnneelllliisstt
+   Creating your favourite channellist
        Simply retrieve the current list by executing
 
            push-channellist > my-list.txt
@@ -77,7 +78,7 @@ CCOONNFFIIGGUURRAATTIIOONN
 
        and get yourself a coffe (or to or three).
 
-IIMMPPLLEEMMEENNTTAATTIIOONN NNOOTTEESS
+IMPLEMENTATION NOTES
        This script is quite slow! As JointSpace directly replies with "OK"
        after each command and you do not know whether it already finished, you
        can't rely that each sent key was really accepted. In order to work
@@ -86,10 +87,10 @@ IIMMPPLLEEMMEENNTTAATTIIOONN NNOOTTEESS
        process. But I managed to set my favourite channellist of 105 channels
        without any issue.
 
-BBUUGGSS
+BUGS
        none yet
 
-AAuutthhoorr
+Author
        Written 2014 by Stephan Hradek
 
        This script is under GPL
