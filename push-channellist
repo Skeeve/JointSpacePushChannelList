@@ -1,0 +1,400 @@
+#!/opt/local/bin/perl
+use HTTP::Tiny;
+use JSON;
+use Getopt::Long qw(:config no_ignore_case);
+use Pod::Usage;
+use strict;
+use warnings;
+
+# My TV can be reached by the name "tv"
+my $TV="http://tv:1925";
+
+my ( # options
+    $dryrun,
+    $test,
+);
+
+help() unless GetOptions(
+    'test'       => \$test,
+    'dryrun'     => \$dryrun,
+    'h|help'     => \&help,
+    'm|man'      => \&man,
+);
+
+sub help { pod2usage(-verbose=>1); exit; }
+sub man  { pod2usage(-verbose=>2); exit; }
+
+# I just use these 2 API functions
+my $API = {
+	'GET channels'     => '/1/channels',
+	'POST input/key'   => '/1/input/key',
+};
+
+# All keys - just to not forget them
+my %KEYS = (
+    Standby             => 1,
+    Back                => 1,
+    Find                => 1,
+    RedColour           => 1,
+    GreenColour         => 1,
+    YellowColour        => 1,
+    BlueColour          => 1,
+    Home                => 1,
+    VolumeUp            => 1,
+    VolumeDown          => 1,
+    Mute                => 1,
+    Options             => 1,
+    Dot                 => 1,
+    Digit0              => 1,
+    Digit1              => 1,
+    Digit2              => 1,
+    Digit3              => 1,
+    Digit4              => 1,
+    Digit5              => 1,
+    Digit6              => 1,
+    Digit7              => 1,
+    Digit8              => 1,
+    Digit9              => 1,
+    Info                => 1,
+    CursorUp            => 1,
+    CursorDown          => 1,
+    CursorLeft          => 1,
+    CursorRight         => 1,
+    Confirm             => 1,
+    Next                => 1,
+    Previous            => 1,
+    Adjust              => 1,
+    WatchTV             => 1,
+    Viewmode            => 1,
+    Teletext            => 1,
+    Subtitle            => 1,
+    ChannelStepUp       => 1,
+    ChannelStepDown     => 1,
+    Source              => 1,
+    AmbilightOnOff      => 1,
+    PlayPause           => 1,
+    Pause               => 1,
+    FastForward         => 1,
+    Stop                => 1,
+    Rewind              => 1,
+    Record              => 1,
+    Online              => 1,
+);
+
+# Keys to "press" before we start
+my @start= (qw(
+	Back
+	Find
+	Options
+	CursorDown
+	CursorDown
+	CursorDown
+	CursorDown
+	CursorDown
+	CursorDown
+	CursorUp
+	CursorUp
+	Confirm
+));
+
+# Keys to press when done
+my @end= (qw(
+	Options
+	Confirm
+	Back
+));
+
+# Initialize HTTP::Tiny.
+my $http= HTTP::Tiny->new();
+
+# If we have no argument, retrieve the current channellist
+if (!@ARGV) {
+    # Get the channellist indexed by preset number
+	my $channels= channellist("preset");
+	die "Can't contact TV $TV\n" unless $channels;
+	# Print the channellist
+	foreach my $preset (sort { $a<=>$b } keys %$channels) {
+		printf "%4d\t%s\n", $preset, $channels->{$preset};
+	}
+	exit;
+}
+
+# If we have an argument, it must be the channellist
+
+# Retrieve the current one, indexd by name.
+# Note: Duplicate names are not supported yet
+my $channels= channellist();
+die "Can't contact TV $TV\n" unless $channels;
+
+# Scan the new channellist
+my %programmplatz;
+my $error= 0;
+my $preset= 0;
+while (<>) {
+	chomp;
+	next if /^\s*(#.*)?$/;
+	if (s/^\s*0*(\d+)(?:\t|  )\s*// or s/(?:\t|  )\s*0*(\d+)\s*$//) {
+		$preset= $1;
+	}
+	else {
+		++$preset;
+	}
+	s/^\s+|\s+$//g;
+	if ($programmplatz{$preset}) {
+		warn "Channelnumber $preset for $_ is already used for ",$programmplatz{$preset},"\n";
+		++$error;
+	}
+	else {
+		$programmplatz{$preset}= $_;
+	}
+	if (not exists $channels->{$_}) {
+		warn "Unknown channel $_\n";
+		++$error;
+	}
+}
+
+my @reihenfolge= sort { $a<=>$b } keys %programmplatz;
+
+# Print the parsed channellist in channelnumber order
+if ($error or $test) {
+	print "Zuviele Fehler in der Programmliste:\n" if $error;
+	foreach my $preset (@reihenfolge) {
+		printf "%4d\t%s\n", $preset, $programmplatz{$preset};
+	}
+	exit unless $dryrun;
+}
+
+
+# Now start pushing the list to the TV
+$|= 1;
+
+send_keys(@start);
+foreach $preset (@reihenfolge) {
+    # Get the new number
+	my $channel= $programmplatz{$preset};
+	# Get the old number
+	my $von= $channels->{$channel};
+	print "From $von to $preset ($channel)";
+	if ($von == $preset) {
+	    # Already there
+		print " -> Skipped\n";
+		next;
+	}
+	if ($von < $preset) {
+	    # If the channel moves to a higher number, we need to
+	    # swap the high channel first or we will shift
+	    # entries we already sorted
+		print " (SWAP!)";
+		# So move some channel from the NEW place to the current
+		move($channel, $preset, $von);
+		# Now move the (shifted) old to the new place
+		move($channel, $von+1, $preset);
+	}
+	else {
+	    # Otherwise we do not care about shifting
+		move($channel, $von, $preset);
+	}
+	# moved
+	print " -> OK\n";
+}
+send_keys(@end);
+exit;
+
+# Helper functions
+# Gets a channel name, a source number and a target number
+# The channel has to be either at the source or the target
+# If it is at the source it will be at the target afterwards
+# If it is at the target, it will be at target+1 afterwards
+sub move {
+	my($channel, $source, $target)= @_;
+	my $before= $channels->{$channel};
+	my $afterwards= $before == $source ? $target : $target+1;
+	send_keys($source, 'Confirm', 'Confirm', $target, 'Confirm');
+	return if $dryrun;
+	my $retry = 3;
+	while ($retry--) {
+		$channels= channellist();
+		if ($channels->{$channel} == $afterwards) {
+			return;
+		}
+		print ".";
+	}
+	die " -> FAILED!\n";
+}
+
+# The keys to send are either strings representing a key name
+# as defined in the API and in %KEYS above
+# Or a number which will be splitted automatically into the
+# correct keys.
+sub send_keys {
+	my @keys;
+	# Check each kkey
+	foreach (@_) {
+		if (/^\d+$/) {
+		    # It's a number so push a key for each digit
+			push @keys, map "Digit$_", split //;
+		}
+		elsif ($KEYS{$_}) {
+		    # Just push the key
+			push @keys, $_;
+		}
+		else {
+		    # Or die if we do not know that key
+			die "Unknown key: $_\n";
+		}
+	}
+	# In a dryrun don't do anything.
+	if ($dryrun) {
+	    # Just print the keys when it's a test
+	    if($test) {
+	        print " -> Sending keys: ",join(", ", @keys), "\n";
+	    }
+	    return;
+	}
+	# Now send each key
+	foreach my $key (@keys) {
+		$http->request(
+			POST => $TV . $API->{'POST input/key'}, {
+				content => encode_json {
+					key => $key
+				}
+			});
+		# After *EACH* keypress, doe something else to slow it down.
+		slow();
+	}
+}
+
+sub get_channels {
+	return $http->get($TV . $API->{'GET channels'});
+}
+
+# Get the channellist as a hash
+# Either index by name (No duplicates!)
+# or by chanellnumber, if the parameter is "preset"
+sub channellist {
+	my($key_name)= shift || '';
+	my $response= get_channels();
+	return undef unless $response->{success};
+	if ($key_name eq 'preset') {
+		return { map { (my $n= $_->{name})=~ s/^\cU//; $_->{preset}, $n } values %{decode_json  $response->{content}} }
+	}
+	return { map { (my $n= $_->{name})=~ s/^\cU//; $n, $_->{preset} } values %{decode_json  $response->{content}} }
+}
+
+sub slow {
+	$http->get($TV . $API->{'GET channels'});
+}
+
+=head1 NAME
+
+push-channellist - a small utility for Philips TV Sets
+
+=head1 SYNOPSIS
+
+1) push-channellist
+2) push-channellist [options] filename
+
+=head1 DESCRIPTION
+
+push-channellist is a small utility to retrieve the channellist from
+a Philips TV set and to push an existing list to the TV.
+
+Please read the section L<CONFIGURATION> below before running the
+script.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-d>
+
+=item B<--dryrun>
+
+Do nothing. Just show what would be done
+
+=item B<-t>
+
+=item B<--test>
+
+Test the channellist, given as filename.
+
+=back
+
+=head1 CONFIGURATION
+
+In order to contact the TV Set, which must support JointSpace (see
+L<http://jointspace.sourceforge.net/>), the IP or name of the TV needs
+to be configured in the script. Search for the line
+
+    my $TV="http://tv:1925";
+
+and replace "tv" with whatever is required for your TV.
+
+=head2 Retrieving the current Channellist
+
+Run push-channellist without any parameters to retrieve the current
+channellist. The list can be used as a basis for your own list to
+push to the TV.
+
+=head2 Format of the channellist
+
+The format of the channellist is quite simple and flexible.
+
+Each line has to be of the format:
+
+    <Channelnumber> <at least 1 Tab or 2 Spaces> <Channelname>
+
+or
+
+    <Channelname> <at least 1 Tab or 2 Spaces> <Channelnumber>
+    
+or
+
+    <Channelname>
+
+If there is no explicit channelnumber given, the next number is used, starting from 1. Example:
+
+    1  Das Erste
+       ZDF
+       WDR Aachen
+    5  SAT.1
+       SWR
+
+Will assign 1, 2 and 3 to the first 3 channels and 5 and 6 to the next
+2 channels.
+
+=head2 Creating your favourite channellist
+
+Simply retrieve the current list by executing
+
+    push-channellist > my-list.txt
+
+Open the list in your favourite text editor and start changing it.
+
+When you're satisfied, execute
+
+    push-channellist my-list.txt
+
+and get yourself a coffe (or to or three).
+
+=head1 IMPLEMENTATION NOTES
+
+This script is quite slow! As JointSpace directly replies with "OK"
+after each command and you do not know whether it already finished,
+you can't rely that each sent key was really accepted. In order to
+work around this problem, I call the "slow" function afer each sent
+key. The "slow" function simply retrieves the channellist which is
+a quite slow process. But I managed to set my favourite channellist
+of 105 channels without any issue.
+
+=head1 BUGS
+
+none yet
+
+=head1 Author
+
+Written 2014 by Stephan Hradek
+
+This script is under GPL
+
+=cut
